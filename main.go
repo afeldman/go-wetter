@@ -1,18 +1,18 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
-	"time"
-
-	wetter "github.com/afeldman/go-wetter/wetter"
 
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 
 	_ "wetter/docs"
+	"wetter/wetter"
 
 	"github.com/gin-gonic/gin"
 )
@@ -20,77 +20,57 @@ import (
 var (
 	release bool
 	port    int
+	server  string
 )
 
 func init() {
 	flag.BoolVar(&release, "release", false, "set to release mode")
 	flag.IntVar(&port, "port", 2510, "set the port")
-}
-
-func local_context(ctx *gin.Context, lon, lat string, date time.Time) {
-	var weatherresponse WeatherResponse
-	data, code, err := wetter.Weather(lat, lon, date)
-	if err != nil {
-		weatherresponse.Status = http.StatusInternalServerError
-		weatherresponse.Error = err.Error()
-		weatherresponse.WeatherData = nil
-
-		ctx.JSON(http.StatusInternalServerError, weatherresponse)
-	}
-
-	weatherresponse.Status = code
-	weatherresponse.Error = ""
-	weatherresponse.WeatherData = &data
-	ctx.JSON(code, weatherresponse)
-}
-
-type WeatherResponse struct {
-	Status int `json:"status" example:"404"`
-	*wetter.WeatherData
-	Error string `json:"error,omitempty" example:"cannot load data"`
-}
-
-// @Summary      get weather information by date
-// @Description  get a weather description of dwd
-// @Param 		 date	query	string	true "2020-10-25"
-// @Param		 lat	query	string 	true "51.873960"
-// @Param		 lon	query	string  true "8.156710"
-// @Success      200  {object}  WeatherResponse
-// @Failure      500  {object}  WeatherResponse
-// @Failure      404  {object}  WeatherResponse
-// @Router		 /{date}/{lat}/{lon} [get]
-func weather_by_date(ctx *gin.Context) {
-	lat := ctx.Param("lat")
-	lon := ctx.Param("lon")
-	sdate := ctx.Param("date")
-
-	var weatherresponse WeatherResponse
-
-	date, error := time.Parse("2006-01-02", sdate)
-	if error != nil {
-		weatherresponse.Status = http.StatusInternalServerError
-		weatherresponse.WeatherData = nil
-		weatherresponse.Error = error.Error()
-		ctx.JSON(http.StatusInternalServerError, weatherresponse)
-	}
-
-	local_context(ctx, lon, lat, date)
-
+	flag.StringVar(&server, "server", "0.0.0.0", "set server address")
 }
 
 // @Summary      Show an account
 // @Description  get string by ID
-// @Param		 lat	query	string 	true "51.873960"
-// @Param		 lon	query	string  true "8.156710"
 // @Success      200  {object}  WeatherResponse
 // @Failure      500  {object}  WeatherResponse
 // @Failure      404  {object}  WeatherResponse
-// @Router		 /now/{lat}/{lon} [get]
-func weather_now(ctx *gin.Context) {
-	lat := ctx.Param("lat")
-	lon := ctx.Param("lon")
+// @Router		 / [post]
+func weather(c *gin.Context) {
+	// read the body to json string
+	jsonData, err := ioutil.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusNotFound, err.Error())
+	}
 
-	local_context(ctx, lon, lat, time.Now())
+	// request a list of weather data
+	var requests []wetter.WeatherRequest
+
+	// json string to request object
+	if err := json.Unmarshal([]byte(jsonData), &requests); err != nil {
+		c.JSON(http.StatusNotFound, err.Error())
+		return
+	}
+
+	// build channel for parallel request
+	responseChannel := make(chan wetter.WeatherResponses)
+
+	for _, req := range requests {
+		go wetter.Weather(req, responseChannel)
+	}
+
+	response := make([][]wetter.WeatherResponse, 0)
+	for range requests {
+		k := <-responseChannel
+		response = append(response, k.Weather)
+	}
+
+	c.JSON(http.StatusOK, response)
+
+}
+
+func source(c *gin.Context) {
+	c.Param("source_id")
+	c.JSON(http.StatusOK, "cool geht :)")
 }
 
 // @Title          Weather information download
@@ -123,11 +103,10 @@ func main() {
 
 	v1 := router.Group("/v1")
 	{
-		v1.GET("/:date/:lat/:lon", weather_by_date)
-
-		v1.GET("/now/:lat/:lon", weather_now)
+		v1.POST("/", weather)
+		v1.GET("/:source_id", source)
 	}
 
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
-	router.Run(fmt.Sprintf("0.0.0.0:%d", port))
+	router.Run(fmt.Sprintf("%s:%d", server, port))
 }
