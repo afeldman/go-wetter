@@ -1,48 +1,40 @@
 package wetter
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
+
+	"github.com/gin-gonic/gin"
 )
 
-const sourcerequesturl string = "https://api.brightsky.dev/sources?units=si&tz=UTC"
+const sourcerequesturl string = "https://api.brightsky.dev/sources?"
 
-func Source(source_id int32) {
+func Source(c *gin.Context, source_id int32) {
 	// build url
 	//lat, lon float64, date, last_date, dwd_station, wmo_station string, source, max_dist int
-	request_url := fmt.Sprintf("%s")
-
-	fmt.Println(request_url)
-	req, err := http.NewRequest("GET", request_url, nil)
-	if err != nil {
-		log.Println(err)
-		return
-	}
-
-	req.Header.Set("Accept", "application/json")
+	request_url := fmt.Sprintf("%ssource_id=%d", sourcerequesturl, source_id)
 
 	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := client.Get(request_url)
 	if err != nil {
-		log.Fatalln(err)
+		c.JSON(http.StatusBadRequest, err.Error())
 	}
-
 	defer resp.Body.Close()
 
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Fatalln(err)
+		c.JSON(http.StatusBadRequest, err.Error())
 	}
 
-	log.Println(string(b))
+	var dwdresp DWDSourcesResponse
 
-	/*err = json.Unmarshal(b, &weather)
+	err = json.Unmarshal(b, &dwdresp)
 	if err != nil {
-		log.Fatalln(err)
-	}*/
+		c.JSON(http.StatusBadRequest, err.Error())
+	}
 
-	//return wr, resp.StatusCode, nil
+	c.JSON(http.StatusOK, dwdresp.Source)
 
 }

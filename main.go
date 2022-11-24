@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strconv"
 
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
@@ -69,8 +70,14 @@ func weather(c *gin.Context) {
 }
 
 func source(c *gin.Context) {
-	c.Param("source_id")
-	c.JSON(http.StatusOK, "cool geht :)")
+	source_id := c.Param("source_id")
+
+	intVar, err := strconv.ParseInt(source_id, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, err.Error())
+	} else {
+		wetter.Source(c, int32(intVar))
+	}
 }
 
 // @Title          Weather information download

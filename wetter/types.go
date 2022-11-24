@@ -87,3 +87,7 @@ type WeatherDWDResponse struct {
 	Weather []DWDWeather     `json:"weather"`
 	Sources []SourceResponse `json:"sources"`
 }
+
+type DWDSourcesResponse struct {
+	Source []SourceResponse `json:"sources"`
+}
